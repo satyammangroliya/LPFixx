@@ -43,14 +43,18 @@ class ilLFStatusLP
         ));
 
         $status = $this->determineStatus($a_obj_id, $a_usr_id, $a_obj);
-        $this->updatePassed($a_obj_id, $a_usr_id, $status['status_changed'], $summary);
-        $old_status = null;
-        $changed = self::writeStatus($a_obj_id, $a_usr_id, $status, $passed_info,   false, false, $old_status);
-        if (!$changed && (bool) $a_force_raise) { // #15529
-            self::raiseEvent($a_obj_id, $a_usr_id, $status['status'], $old_status, false);
-            $changed = true;
+        if($status && $status['status'] == ilLPStatus::LP_STATUS_COMPLETED_NUM){
+            $this->updatePassed($a_obj_id, $a_usr_id, $status['status_changed'], $summary);
+            $old_status = null;
+            $changed = self::writeStatus($a_obj_id, $a_usr_id, $status, $passed_info,   false, false, $old_status);
+            if (!$changed && (bool) $a_force_raise) { // #15529
+                self::raiseEvent($a_obj_id, $a_usr_id, $status['status'], $old_status, false);
+                $changed = true;
+            }
+            if ($changed) $summary['certs_generated'] ++;
+
         }
-        if ($changed) $summary['certs_generated'] ++;
+        
 
     }
 
@@ -84,10 +88,13 @@ class ilLFStatusLP
                     FROM ut_lp_collections uc 
                         INNER JOIN object_reference obr ON obr.ref_id= uc.item_id AND uc.obj_id = %s
                          INNER JOIN object_data obd ON obd.obj_id=obr.obj_id 
-                         INNER JOIN ut_lp_marks ut ON obd.obj_id=ut.obj_id AND ut.usr_id = %s 
+                         INNER JOIN ut_lp_marks ut ON obd.obj_id=ut.obj_id AND ut.usr_id = %s AND ut.status <= 2
                          GROUP BY ut.usr_id, uc.obj_id";
 
         $res = $this->dic->database()->queryF($query, ['integer', 'integer'], [$obj_id, $usr_id] );
+        if($res->numRows() == 0){
+            return false;
+        }
         $status = array();
         while($row = $this->dic->database()->fetchAssoc($res)){
             $status = $row;
@@ -239,8 +246,8 @@ class ilLFStatusLP
     {
         if($rule){}
         else{
-            $query = "SELECT DISTINCT uc.obj_id, utl.usr_id FROM ut_lp_collections uc INNER JOIN ut_lp_marks utl ON uc.obj_id = utl.obj_id INNER JOIN object_data obd ON obd.obj_id = uc.obj_id WHERE uc.grouping_id > 0 AND utl.status = %s AND obd.type= %s";
-            $res = $this->dic->database()->queryF($query, ['text', 'text'], [ilLPStatus::LP_STATUS_COMPLETED_NUM, 'crs']);
+            $query = "SELECT DISTINCT uc.obj_id, utl.usr_id FROM ut_lp_collections uc INNER JOIN ut_lp_marks utl ON uc.obj_id = utl.obj_id INNER JOIN object_data obd ON obd.obj_id = uc.obj_id WHERE uc.grouping_id > 0 AND (utl.status = %s OR utl.status = %s) AND obd.type= %s";
+            $res = $this->dic->database()->queryF($query, ['integer','integer', 'text'], [ilLPStatus::LP_STATUS_COMPLETED_NUM, ilLPStatus::LP_STATUS_FAILED_NUM, 'crs']);
             $members = array();
             while($r = $this->dic->database()->fetchAssoc($res)){
                 $members [] = [$r['obj_id'] => $r['usr_id']];
