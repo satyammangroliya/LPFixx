@@ -7,6 +7,7 @@ use ilLoggerFactory;
 use ilLPStatusWrapper;
 use ilLPStatus;
 use ilObject;
+use ilDBConstants;
 
 
 /**
@@ -43,7 +44,14 @@ class ilLFStatusLP
         ));
 
         $status = $this->determineStatus($a_obj_id, $a_usr_id, $a_obj);
+        $certs_info = $this->getCertificateInfo($a_usr_id, $a_obj_id);
+
+        if ($status && !empty($status['status_changed']) && $status['status_changed'] == ilLPStatus::_lookupStatusChanged($a_obj_id, $a_usr_id)){
+            $summary['not_updated'] ++;
+            return ;
+        }
         $this->updatePassed($a_obj_id, $a_usr_id, $status['status_changed'], $summary);
+        
         $old_status = null;
         $changed = self::writeStatus($a_obj_id, $a_usr_id, $status, $passed_info,   false, false, $old_status);
         if (!$changed && (bool) $a_force_raise) { // #15529
@@ -80,7 +88,7 @@ class ilLFStatusLP
     public function determineStatus($obj_id, $usr_id, $obj)
     {
 
-        $query = "SELECT  ut.usr_id, MAX(ut.status) AS status, ut.status_changed, uc.obj_id,  uc.lpmode, obr.obj_id 
+        $query = "SELECT  ut.usr_id, MAX(ut.status) AS status, MAX(ut.status_changed) AS status_changed, uc.obj_id,  uc.lpmode, obr.obj_id 
                     FROM ut_lp_collections uc 
                         INNER JOIN object_reference obr ON obr.ref_id= uc.item_id AND uc.obj_id = %s
                          INNER JOIN object_data obd ON obd.obj_id=obr.obj_id 
@@ -229,7 +237,20 @@ class ilLFStatusLP
         return $update_dependencies;
     }
 
-
+    public  function hasUserCertificate($usr_id, $obj_id)
+    {
+        $sql = "SELECT id from il_cert_user_cert where user_id = %s AND obj_id =%s";
+        $res = $this->dic->database()->queryF($sql, ['integer', 'integer'], [$usr_id, $obj_id]);
+        return ($res->numRows() > 0);
+    }
+    public function getCertificateInfo($usr_id, $obj_id)
+    {
+        $sql = "SELECT template_values from il_cert_user_cert where user_id = %s AND obj_id =%s ORDER BY id LIMIT 1";
+        $res = $this->dic->database()->queryF($sql, ['integer', 'integer'], [$usr_id, $obj_id]);
+        $row = $this->dic->database()->fetchAssoc($res);
+        $GLOBALS['DIC']->logger()->root()->dump($row['template_values']);
+        return json_decode($row['template_values'], true);
+    }
     public static function generateCertificates()
     {
 
