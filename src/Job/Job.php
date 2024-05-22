@@ -115,13 +115,14 @@ class Job extends ilCronJob
             $iterator = $status_fixer->getObjectsPerRule();
             $summary = [
                 'passed_updated' => 0,
-                'certs_generated' => 0
+                'certs_generated' => 0,
+                'not_updated' => 0
             ];
             foreach ($iterator as $obj_id => $usr_id){
                 $p_info = (ilObjectFactory::getInstanceByObjId($obj_id))->getMembersObject()->getPassedInfo($usr_id);
                 $status_fixer->updateStatus($obj_id, $usr_id, $p_info, $summary);
             }
-            $message = $summary['passed_updated'] . " set to passed. And " . $summary['certs_generated'] . " certificated regenerated";
+            $message = $summary['passed_updated'] . " set to passed.  </br>"  . $summary['not_updated']. " not updated. </br> " . $summary['certs_generated'] . " certificated regenerated";
             $result->setMessage($message);
             $result->setStatus(ilCronJobResult::STATUS_OK);
 

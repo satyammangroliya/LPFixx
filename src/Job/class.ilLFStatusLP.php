@@ -7,6 +7,7 @@ use ilLoggerFactory;
 use ilLPStatusWrapper;
 use ilLPStatus;
 use ilObject;
+use ilDBConstants;
 
 
 /**
@@ -43,15 +44,18 @@ class ilLFStatusLP
         ));
 
         $status = $this->determineStatus($a_obj_id, $a_usr_id, $a_obj);
-        if($status && $status['status'] == ilLPStatus::LP_STATUS_COMPLETED_NUM){
-            $this->updatePassed($a_obj_id, $a_usr_id, $status['status_changed'], $summary);
-            $old_status = null;
-            $changed = self::writeStatus($a_obj_id, $a_usr_id, $status, $passed_info,   false, false, $old_status);
-            if (!$changed && (bool) $a_force_raise) { // #15529
-                self::raiseEvent($a_obj_id, $a_usr_id, $status['status'], $old_status, false);
-                $changed = true;
-            }
-            if ($changed) $summary['certs_generated'] ++;
+
+        if ($status && !empty($status['status_changed']) && $status['status_changed'] == ilLPStatus::_lookupStatusChanged($a_obj_id, $a_usr_id)){
+            $summary['not_updated'] ++;
+            return ;
+        }
+        $this->updatePassed($a_obj_id, $a_usr_id, $status['status_changed'], $summary);
+        
+        $old_status = null;
+        $changed = self::writeStatus($a_obj_id, $a_usr_id, $status, $passed_info,   false, false, $old_status);
+        if (!$changed && (bool) $a_force_raise) { // #15529
+            self::raiseEvent($a_obj_id, $a_usr_id, $status['status'], $old_status, false);
+            $changed = true;
 
         }
         
@@ -84,14 +88,19 @@ class ilLFStatusLP
     public function determineStatus($obj_id, $usr_id, $obj)
     {
 
-        $query = "SELECT  ut.usr_id, MAX(ut.status) AS status, ut.status_changed, uc.obj_id,  uc.lpmode, obr.obj_id 
-                    FROM ut_lp_collections uc 
-                        INNER JOIN object_reference obr ON obr.ref_id= uc.item_id AND uc.obj_id = %s
-                         INNER JOIN object_data obd ON obd.obj_id=obr.obj_id 
-                         INNER JOIN ut_lp_marks ut ON obd.obj_id=ut.obj_id AND ut.usr_id = %s AND ut.status <= 2
-                         GROUP BY ut.usr_id, uc.obj_id";
+        $query = "SELECT 
+        ut.usr_id, 
+        ut.status, 
+        ut.status_changed, 
+        uc.obj_id AS obj_id, 
+        uc.lpmode, 
+        obr.obj_id AS module_id
+    FROM  ut_lp_collections uc 
+        INNER JOIN object_reference obr ON obr.ref_id= uc.item_id AND uc.obj_id = %s
+        INNER JOIN ut_lp_marks ut ON ut.obj_id=obr.obj_id AND
+         ut.usr_id=%s AND ut.status=2 ";
 
-        $res = $this->dic->database()->queryF($query, ['integer', 'integer'], [$obj_id, $usr_id] );
+        $res = $this->dic->database()->queryF($query, ['integer', 'integer'], [$obj_id,  $usr_id ] );
         if($res->numRows() == 0){
             return false;
         }
@@ -236,7 +245,20 @@ class ilLFStatusLP
         return $update_dependencies;
     }
 
-
+    public  function hasUserCertificate($usr_id, $obj_id)
+    {
+        $sql = "SELECT id from il_cert_user_cert where user_id = %s AND obj_id =%s";
+        $res = $this->dic->database()->queryF($sql, ['integer', 'integer'], [$usr_id, $obj_id]);
+        return ($res->numRows() > 0);
+    }
+    public function getCertificateInfo($usr_id, $obj_id)
+    {
+        $sql = "SELECT template_values from il_cert_user_cert where user_id = %s AND obj_id =%s ORDER BY id LIMIT 1";
+        $res = $this->dic->database()->queryF($sql, ['integer', 'integer'], [$usr_id, $obj_id]);
+        $row = $this->dic->database()->fetchAssoc($res);
+        $GLOBALS['DIC']->logger()->root()->dump($row['template_values']);
+        return json_decode($row['template_values'], true);
+    }
     public static function generateCertificates()
     {
 
@@ -246,12 +268,18 @@ class ilLFStatusLP
     {
         if($rule){}
         else{
-            $query = "SELECT DISTINCT uc.obj_id, utl.usr_id FROM ut_lp_collections uc INNER JOIN ut_lp_marks utl ON uc.obj_id = utl.obj_id INNER JOIN object_data obd ON obd.obj_id = uc.obj_id WHERE uc.grouping_id > 0 AND (utl.status = %s OR utl.status = %s) AND obd.type= %s";
+            $query = "SELECT DISTINCT uc.obj_id, utl.usr_id 
+            FROM ut_lp_collections uc 
+            INNER JOIN ut_lp_marks utl ON uc.obj_id = utl.obj_id 
+            INNER JOIN object_data obd ON obd.obj_id = uc.obj_id 
+            WHERE uc.grouping_id > 0 AND (utl.status = %s OR utl.status = %s) 
+                AND obd.type= %s";
             $res = $this->dic->database()->queryF($query, ['integer','integer', 'text'], [ilLPStatus::LP_STATUS_COMPLETED_NUM, ilLPStatus::LP_STATUS_FAILED_NUM, 'crs']);
             $members = array();
             while($r = $this->dic->database()->fetchAssoc($res)){
                 $members [] = [$r['obj_id'] => $r['usr_id']];
             }
+            $GLOBALS['DIC']->logger()->root()->dump(array("Computing for ", $members));
             return new RecursiveIteratorIterator(new RecursiveArrayIterator($members));;
         }
     }
