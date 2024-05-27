@@ -3,3 +3,6 @@
 - Adjust the mechanism to accumulate learning progress. Only retrieve users with status=2(passed)
 - Remove the grouping
 - Versioning and add change log
+
+## 27.05.2024 version 2.0.1  
+- Remove verbose debugging from production code

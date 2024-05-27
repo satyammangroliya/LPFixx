@@ -279,7 +279,6 @@ class ilLFStatusLP
             while($r = $this->dic->database()->fetchAssoc($res)){
                 $members [] = [$r['obj_id'] => $r['usr_id']];
             }
-            $GLOBALS['DIC']->logger()->root()->dump(array("Computing for ", $members));
             return new RecursiveIteratorIterator(new RecursiveArrayIterator($members));;
         }
     }
