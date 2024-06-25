@@ -45,7 +45,9 @@ class ilLFStatusLP
 
         $status = $this->determineStatus($a_obj_id, $a_usr_id, $a_obj);
 
-        if ($status && !empty($status['status_changed']) && $status['status_changed'] == ilLPStatus::_lookupStatusChanged($a_obj_id, $a_usr_id)){
+        if (!$status || ($status && !empty($status['status_changed']) 
+                && $status['status_changed'] == ilLPStatus::_lookupStatusChanged($a_obj_id, $a_usr_id)
+            )){
             $summary['not_updated'] ++;
             return ;
         }
@@ -88,17 +90,27 @@ class ilLFStatusLP
     public function determineStatus($obj_id, $usr_id, $obj)
     {
 
-        $query = "SELECT 
-        ut.usr_id, 
-        ut.status, 
-        ut.status_changed, 
-        uc.obj_id AS obj_id, 
-        uc.lpmode, 
-        obr.obj_id AS module_id
-    FROM  ut_lp_collections uc 
-        INNER JOIN object_reference obr ON obr.ref_id= uc.item_id AND uc.obj_id = %s
-        INNER JOIN ut_lp_marks ut ON ut.obj_id=obr.obj_id AND
-         ut.usr_id=%s AND ut.status=2 ";
+        $query = "WITH modules_lp AS (
+                    SELECT uc.obj_id, ut.usr_id, uc.item_id as module_id, ut.status, ut.status_changed, ut.status_dirty, ut.percentage 
+                    FROM ut_lp_collections uc 
+                    INNER JOIN object_reference obr ON uc.item_id=obr.ref_id AND uc.obj_id=%s  
+                    INNER JOIN 		ut_lp_marks ut ON ut.obj_id=obr.obj_id AND ut.usr_id=%s),
+                preferred_status AS (
+                    SELECT obj_id, usr_id, MAX(CASE WHEN status=2 THEN 1 ELSE 0 END) As has_status_2
+                    FROM modules_lp
+                    GROUP BY obj_id,usr_id
+                ),
+                max_status AS(
+                    SELECT obj_id, usr_id, MAX(status) as max_status
+                    FROM modules_lp
+                    GROUP BY obj_id, usr_id
+                )
+                SELECT 
+                    DISTINCT mp.* FROM modules_lp mp
+                INNER JOIN preferred_status ps ON mp.obj_id = ps.obj_id AND mp.usr_id = ps.usr_id
+                INNER JOIN max_status ms ON mp.obj_id = ms.obj_id AND mp.usr_id = ms.usr_id
+                WHERE (ps.has_status_2 = 1 AND mp.status = 2) 
+                OR (ps.has_status_2 = 0 AND mp.status = ms.max_status)";
 
         $res = $this->dic->database()->queryF($query, ['integer', 'integer'], [$obj_id,  $usr_id ] );
         if($res->numRows() == 0){
@@ -269,11 +281,11 @@ class ilLFStatusLP
         if($rule){}
         else{
             $query = "SELECT DISTINCT uc.obj_id, utl.usr_id 
-            FROM ut_lp_collections uc 
-            INNER JOIN ut_lp_marks utl ON uc.obj_id = utl.obj_id 
-            INNER JOIN object_data obd ON obd.obj_id = uc.obj_id 
-            WHERE uc.grouping_id > 0 AND (utl.status = %s OR utl.status = %s) 
-                AND obd.type= %s";
+                FROM ut_lp_collections uc 
+                INNER JOIN ut_lp_marks utl ON uc.obj_id = utl.obj_id 
+                INNER JOIN object_data obd ON obd.obj_id = uc.obj_id 
+                WHERE uc.grouping_id > 0 AND (utl.status = %s OR utl.status = %s) 
+                    AND obd.type= %s";
             $res = $this->dic->database()->queryF($query, ['integer','integer', 'text'], [ilLPStatus::LP_STATUS_COMPLETED_NUM, ilLPStatus::LP_STATUS_FAILED_NUM, 'crs']);
             $members = array();
             while($r = $this->dic->database()->fetchAssoc($res)){
