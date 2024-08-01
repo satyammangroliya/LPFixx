@@ -20,18 +20,24 @@ class ilLPFixxPlugin extends ilCronHookPlugin
     const PLUGIN_CLASS_NAME = self::class;
     const PLUGIN_ID = "lpfixx";
     const PLUGIN_NAME = "LPFixx";
+    
     /**
      * @var self|null
      */
     protected static $instance = null;
+    public static ?ilComponentRepositoryWrite $cached_component_repository = null;
+    public static $cached_id = 0;
 
 
     /**
      * ilLPFixxPlugin constructor
      */
-    public function __construct()
+    public function __construct(ilDBInterface $db, ilComponentRepositoryWrite $component_repository, string $id)
     {
-        parent::__construct();
+        parent::__construct($db, $component_repository, $id);
+        self::$cached_id = $id;
+        self::$cached_component_repository = $component_repository;
+
     }
 
 
@@ -54,7 +60,7 @@ class ilLPFixxPlugin extends ilCronHookPlugin
     /**
      * @inheritDoc
      */
-    public function getCronJobInstance(/*string*/ $a_job_id) : ?ilCronJob
+    public function getCronJobInstance(string $a_job_id) : ilCronJob
     {
         return self::lPFixx()->jobs()->factory()->newInstanceById($a_job_id);
     }
