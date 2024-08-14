@@ -16,5 +16,5 @@ Please setup the time intervals in the cron administration.
 
 ## Requirements
 
-* ILIAS 5.4 - 7.999
+* ILIAS 5.4 - 8.999
 * PHP >=7.2
